@@ -194,6 +194,13 @@ def create_substance_service_var(
     The output is a pandasDataFrame with the original input,
     the preprocessed text and all possible matches with similary score.
     Use parameters to control output and sensitivity of the matcher. 
+    
+    arguments:
+        col_with_substances: column with substances to be recoded
+        col_with_ref_substances: column with reference substances
+        threshold: similarity threshold, default 0.85
+        max_per_match_id: maximum number of matches per ID, default 2
+        only_first_match: return only the first match per ID
     """
     preprocessed_out = preprocess_data(col_with_substances)
 
@@ -388,3 +395,7 @@ def create_protocol_service_var(col_with_protocols: pd.Series,
                       required_columns)
     
     return out
+
+def test():
+    print("this is just a test")
+    return

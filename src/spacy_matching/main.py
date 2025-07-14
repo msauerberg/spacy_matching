@@ -3,22 +3,17 @@ Uses the test dataset provided by Stefan Meisegeier with fake clin data
 Functions are imported from utils and data is read in with pandas
 """
 
-import sqlite3
+import duckdb
 import pandas as pd
 from utils import create_substance_service_var, create_protocol_service_var, sort_row
 
 # get data from here:
 # https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-generator/-/tree/main/assets?ref_type=heads
-sqlite_con = sqlite3.connect(".local/fake_clin_data.db")
-substance_data = pd.read_sql_query(
-    "SELECT distinct Bezeichnung FROM Substanz", sqlite_con
-)
+db_con = duckdb.connect(".local/fake_clin_data.db", read_only=True)
+substance_data = db_con.sql("SELECT distinct Bezeichnung FROM Substanz").to_df()
+protocol_data = db_con.sql("SELECT distinct Bezeichnung FROM Protokoll").to_df()
 
-protocol_data = pd.read_sql_query(
-    "SELECT distinct Bezeichnung FROM Protokoll", sqlite_con
-)
-
-sqlite_con.close()
+db_con.close()
 
 col_with_substances_ZfKD_fake_data = substance_data["Bezeichnung"]
 

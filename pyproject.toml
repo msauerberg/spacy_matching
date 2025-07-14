@@ -1,9 +1,26 @@
 [project]
 name = "spacy-matching"
-version = "0.1.0"
+version = "0.2.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["matching", "package", "cancerdata"]
+authors = [
+    { name = "msauerberg", email = "markus.sauerberg@bwfgb.hamburg.de" },
+    { name = "smeisegeier", email = "meisegeiers@rki.de" },
+]
+
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    'Development Status :: 1 - Planning',
+    'Intended Audience :: Science/Research',
+    'Operating System :: OS Independent',
+    'Topic :: Scientific/Engineering'    
+]
+
+
 dependencies = [
     "kaleido==0.2.0",
     "levenshtein>=0.27.1",
@@ -13,3 +30,15 @@ dependencies = [
     "spacy>=3.8.5",
     "spaczz>=0.6.1",
 ]
+
+[project.urls]
+# Homepage = "https://github.com/smeisegeier/cancerdata-pii"
+Repository = "https://github.com/msauerberg/spacy-matching"
+# "Bug Tracker" = "https://github.com/smeisegeier/cancerdata-pii/issues"
+
+[build-system]
+requires = ["hatchling"] # Use hatchling as the build tool
+build-backend = "hatchling.build"
+
+# Hatchling automatically discovers packages in 'src' by default.
+# No need for a separate [tool.setuptools.packages.find] section.

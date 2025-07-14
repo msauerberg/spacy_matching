@@ -10,16 +10,12 @@ For analysis, it is helpful to have substances reported in a harmonized way. The
 
 ## usage
 
-The function "create_substance_service_var()" requires importing the following modules:
-    1. re
-    2. pandas
-    3. spacy
-    4. spaczz
-
-In addition, the user needs to import the functions preprocess_data() and get_matches() from utils.py.
+Call  `create_substance_service_var()` to get a pandas dataframe including the recoded column / variable.
 
 The data should be provided as a column of a pandasDataFrame (i.e., a PandaSeries) with free text records in each row.
 The substances that we want to find in the free text field should provided as a PandaSeries as well.
+
+code example:
 
 ```python
 import re
@@ -29,8 +25,8 @@ from spaczz.matcher import FuzzyMatcher
 from utils import preprocess_data, get_matches
 
 #get reference table from web
-URL_LINK = "https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-references/-/raw/main/data/v2/Klassifikationen/substanz.csv?ref_type=heads"
-reference_list = pd.read_csv(URL_LINK, sep=";")
+URL_V2 = "https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-references/-/raw/main/data/v2/Klassifikationen/substanz.csv?ref_type=heads"
+reference_list = pd.read_csv(URL_V2, sep=";")
 
 #get the column with reference substances
 col_with_ref_substances_ZfKD = reference_list["substanz"]
@@ -59,7 +55,7 @@ results_multiple_hits = create_substance_service_var(
 ## Options and parameters
 
 The function features some parameters: The threshold parameter defines the accuracy. The lower the more matches but higher
-values lead to more accurate matches. The graph below plots the number of substances extracted from free text fields against the corresponding threshold parameter. There is a tradeoff between the number of matches and their accuracy. A threshold value of 0.85 is set as default as it usually ensures sufficient accuracy.    
+values lead to more accurate matches. The graph below plots the number of substances extracted from free text fields against the corresponding threshold parameter. There is a tradeoff between the number of matches and their accuracy. A threshold value of 0.85 is set as default as it usually ensures sufficient accuracy.
 
 ![show_num](https://github.com/msauerberg/spacy_matching/blob/master/images/plot_match_count_vs_threshold.png?raw=true)
 
