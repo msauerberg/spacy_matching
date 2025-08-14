@@ -23,11 +23,11 @@ Return:
 ```python
 from spacy_matching import recoding as rec
 
-# get substance reference table from public repo
+# * get substance reference table from public repo
 URL_V2 = "https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-references/-/raw/main/data/v2/Klassifikationen/substanz.csv?ref_type=heads"
 reference_list = pd.read_csv(URL_V2, sep=";")
 
-#create a pandaSeries with some test data
+# * create a pandaSeries with some test data
 fake_data = pd.Series(["Interferon alpha 2a", "Paclitaxel (nab)", "Filgrastim", "Leuprorelin; Tamoxifen"])
 
 # * add a column with recoded substances
