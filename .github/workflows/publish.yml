@@ -28,14 +28,20 @@ jobs:
     - name: Build the package
       run: python -m build
 
-    - name: Simulate publish to PyPI
-      env:
-        PYPI_API_KEY: ${{ secrets.PYPI_API_KEY_PERSONAL }}
-      run: |
-        echo "Simulating package publish to PyPI..."
-        echo "Package files in dist/:"
-        ls dist/
-        echo "Using Python version: ${{ env.PYTHON_VERSION }}"
-        # Mask the actual API key for security
-        echo "API key (masked): ${PYPI_API_KEY:0:6}****"
-        echo "This is a simulation. No actual upload done."
+    # - name: Simulate publish to PyPI
+    #   if: false
+    #   env:
+    #     PYPI_API_KEY: ${{ secrets.PYPI_API_KEY_PERSONAL }}
+    #   run: |
+    #     echo "Simulating package publish to PyPI..."
+    #     echo "Package files in dist/:"
+    #     ls dist/
+    #     echo "Using Python version: ${{ env.PYTHON_VERSION }}"
+    #     # Mask the actual API key for security
+    #     echo "API key (masked): ${PYPI_API_KEY:0:6}****"
+    #     echo "This is a simulation. No actual upload done."
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_KEY_PERSONAL }}
