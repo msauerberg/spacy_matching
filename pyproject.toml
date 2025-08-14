@@ -1,16 +1,14 @@
 [project]
 name = "spacy-matching"
-version = "0.3.3"
+version = "0.3.4"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 keywords = ["matching", "package", "cancerdata"]
 authors = [
     { name = "msauerberg", email = "markus.sauerberg@bwfgb.hamburg.de" },
-    { name = "smeisegeier", email = "meisegeiers@rki.de" },
 ]
 maintainers = [
-    { name = "msauerberg", email = "markus.sauerberg@bwfgb.hamburg.de" },
     { name = "smeisegeier", email = "meisegeiers@rki.de" },
 ]
 
