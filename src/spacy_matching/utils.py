@@ -72,10 +72,39 @@ def find_Paclitaxel_nab(text: str) -> str:
         r"\bnab[\s\-]?Paclitaxel\b", "Paclitaxel nab", text, flags=re.IGNORECASE
     )
 
+def add_spaces(s: pd.Series) -> pd.Series:
+    """
+    Preprocess a pandas Series of strings to improve fuzzy matching:
+    - Adds spaces around (), [], {}, commas, semicolons, colons
+    - Separates letters from digits
+    - Separates words from punctuation (except / and - so units like mg/kg and hyphenated words stay intact)
+    - Keeps Unicode letters like ä, ü, ö intact
+    - Normalizes whitespace
+    - Lowercases text
+    """
+    def clean_text(text: str) -> str:
+        if text is None:
+            return ""
+        text = str(text)
+
+        # Add spaces around specific punctuation
+        text = re.sub(r'([()\[\]{},:;])', r' \1 ', text)
+
+        # Separate letters and digits (handles Unicode letters too)
+        text = re.sub(r'(\d)(\D)', r'\1 \2', text)
+        text = re.sub(r'(\D)(\d)', r'\1 \2', text)
+
+        # Separate letters from non-word, non-space, excluding / and -
+        text = re.sub(r'([^\w\s/\-])(\w)', r'\1 \2', text)
+        text = re.sub(r'(\w)([^\w\s/\-])', r'\1 \2', text)
+
+        # Collapse multiple spaces and lowercase
+        text = re.sub(r'\s+', ' ', text).strip().lower()
+        return text
+
+    return s.map(clean_text)
 
 # preprocessing using helper functions
-
-
 def preprocess_data(col_with_free_text: pd.Series) -> pd.DataFrame:
     """Applies functions from above sequentially to input data
     """    
@@ -89,9 +118,10 @@ def preprocess_data(col_with_free_text: pd.Series) -> pd.DataFrame:
         .apply(remove_short_words)
         .str.strip()
     )
-    df["Preprocessed_text"] = processed
-    return df
 
+    df["Preprocessed_text"] = add_spaces(processed)
+
+    return df
 
 # find matches with FuzzyMatcher from spaczz
 
@@ -122,7 +152,7 @@ def get_matches(
     It is recommanded to use a rather high threshold parameter because substance
     names are often very similar to each other.
     """
-    nlp = spacy.blank("en")
+    nlp = spacy.blank("de")
     matcher = FuzzyMatcher(nlp.vocab)
 
     for sub in ref_substance.dropna().astype(str):
@@ -151,7 +181,7 @@ def get_matches(
 
             result_row[f"Hit{match_idx}"] = doc[start:end].text
             result_row[f"Mapped_to{match_idx}"] = match_id
-            result_row[f"Similarity{match_idx}"] = ratio
+            result_row[f"Similarity{match_idx}"] = ratio/100
 
             match_id_counts[match_id] = count + 1
             match_idx += 1
