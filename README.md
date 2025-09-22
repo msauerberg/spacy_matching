@@ -15,10 +15,19 @@ Call  `add_substance()` with these arguments as Series:
 - `col_with_substances` -  **original** substance name (freetext)
 - `col_with_ref_substances` - **reference** list of substances
 
-Return:
+Returns a dataframe with the following columns:
+- `Original` - column with **original** value
+- `Mapped_to` - column with **recoded** value, i.e the substance name that is deemed most likely
+- `Similarity` - column with **similarity** score
 
-- column with **recoded** value, i.e the substance name that is deemed most likely
-- column with **similarity** score
+```
+Original                   Mapped_to         Similarity
+0            Fluorouracil  Fluorouracil      1.00
+1              Epirubicin  Epirubicin        1.00
+2        PEG-Asparaginase  Pegaspargase      0.86
+3             Trastuzumab  Trastuzumab       1.00
+4  Temozolomid (Temodal®)  Temozolomid       1.00
+```
 
 ```python
 from spacy_matching import recoding as rec
@@ -34,7 +43,6 @@ fake_data = pd.Series(["Interferon alpha 2a", "Paclitaxel (nab)", "Filgrastim", 
 results = rec.add_substance(
     col_with_substances=fake_data,
     col_with_ref_substances=reference_list["substanz"],
-    only_first_match=True,
     threshold=0.85
 )
 ```

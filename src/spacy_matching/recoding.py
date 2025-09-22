@@ -6,7 +6,7 @@ def add_substance(
     col_with_ref_substances: pd.Series,
     threshold: float = 0.85,
     max_per_match_id: int = 2,
-    only_first_match: bool = False,
+    only_first_match: bool = True,
 ) -> pd.DataFrame:
     """
     This is the pipeline for creating the service variable

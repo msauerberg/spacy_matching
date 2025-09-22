@@ -191,7 +191,7 @@ def get_matches(
     out = pd.DataFrame(results)
 
     if only_first_match:
-        cols_to_keep = ["Original", "Preprocessed", "Hit1", "Mapped_to1", "Similarity1"]
+        cols_to_keep = ["Original", "Mapped_to1", "Similarity1"]
         available_columns = [col for col in cols_to_keep if col in out.columns]
         dta_col_selected = out[available_columns]
         dta_col_selected.columns = [
