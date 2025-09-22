@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version < '3.12'",
@@ -1207,6 +1207,18 @@ wheels = [
 ]
 
 [[package]]
+name = "matplotlib-inline"
+version = "0.1.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "traitlets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/5b/a36a337438a14116b16480db471ad061c36c3694df7c2084a0da7ba538b7/matplotlib_inline-0.1.7.tar.gz", hash = "sha256:8423b23ec666be3d16e16b60bdd8ac4e86e840ebd1dd11a30b9f117f2fa0ab90", size = 8159, upload-time = "2024-04-15T13:44:44.803Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/8e/9ad090d3553c280a8060fbf6e24dc1c0c29704ee7d1c372f0c174aa59285/matplotlib_inline-0.1.7-py3-none-any.whl", hash = "sha256:df192d39a4ff8f21b1895d72e6a13f5fcc5099f00fa84384e0ea28c2cc0653ca", size = 9899, upload-time = "2024-04-15T13:44:43.265Z" },
+]
+
+[[package]]
 name = "matplotlib-venn"
 version = "0.11.10"
 source = { registry = "https://pypi.org/simple" }
@@ -1576,7 +1588,7 @@ wheels = [
 
 [[package]]
 name = "pandas-plots"
-version = "0.15.10"
+version = "0.16.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "connection-helper" },
@@ -1585,6 +1597,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "kaleido" },
     { name = "matplotlib" },
+    { name = "matplotlib-inline" },
     { name = "matplotlib-venn" },
     { name = "missingno" },
     { name = "nbformat" },
@@ -1594,9 +1607,9 @@ dependencies = [
     { name = "requests" },
     { name = "seaborn" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/15/25/51472de9621743421fcd33aeaef3873e22eddd26467e0982125816ebc321/pandas_plots-0.15.10.tar.gz", hash = "sha256:2d03fa3383d8b8108c50d79dc0bd99e4e4d3d08fa511b593bbe3a2ed06dda6bb", size = 37644, upload-time = "2025-08-12T14:55:06.503Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/a8/be227ea7501c71ebb7e0a681fd2afc3d188144f34f11650e8eab5f08decd/pandas_plots-0.16.2.tar.gz", hash = "sha256:ef51ac09bdb51504f2c2c87463ec4204553ab0bfe05fac96bbdec0a7d35ae8e6", size = 38525, upload-time = "2025-09-22T11:06:34.134Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/1a/773477307b4daad262f97bf29e446b235394f8a999ab1a49e92f2071624b/pandas_plots-0.15.10-py3-none-any.whl", hash = "sha256:63abaa4687df6af8f04283090e833998e533ef704396c64893ea025cb08c04c9", size = 39872, upload-time = "2025-08-12T14:55:04.918Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/85/9b94838c47e52692c5a1c373558cf11b6ca38967229919687ad1047a8339/pandas_plots-0.16.2-py3-none-any.whl", hash = "sha256:5504bb8146c7522422011ae893062675656938801d674e4900717297976afa4b", size = 40774, upload-time = "2025-09-22T11:06:33.022Z" },
 ]
 
 [[package]]
@@ -2627,7 +2640,7 @@ wheels = [
 
 [[package]]
 name = "spacy-matching"
-version = "0.4.1"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "levenshtein" },
@@ -2642,7 +2655,7 @@ dependencies = [
 requires-dist = [
     { name = "levenshtein", specifier = ">=0.27.1" },
     { name = "pandas", specifier = ">=2.2.3" },
-    { name = "pandas-plots", specifier = ">=0.15.10" },
+    { name = "pandas-plots", specifier = ">=0.16.2" },
     { name = "pip", specifier = ">=25.0.1" },
     { name = "spacy", specifier = ">=3.8.5" },
     { name = "spaczz", specifier = ">=0.6.1" },
