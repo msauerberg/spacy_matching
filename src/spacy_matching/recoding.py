@@ -1,5 +1,5 @@
 import pandas as pd
-from .utils import preprocess_data, get_matches, get_codes, merge_frame
+from .utils import preprocess_data, get_matches, fuzzy_match
 
 def add_substance(
     col_with_substances: pd.Series,
@@ -44,15 +44,33 @@ def add_substance(
     return final_output
 
 def add_protocol(col_with_protocols: pd.Series,
+              col_with_ref: pd.Series,
+              threshold: float = 0.9):
+    """
+    Returns DataFrame with extracted code and similarity (normalized 0..1).
+    """
+    protocol_df = col_with_protocols.to_frame(name="Original")
+    protocol_df[["Extracted_Code", "Similarity"]] = protocol_df["Original"].apply(
+        lambda x: pd.Series(fuzzy_match(x, col_with_ref, threshold=threshold))
+    )
+
+    protocol_df["Preprocessed"] = preprocess_data(protocol_df["Original"])["Preprocessed_text"]
+    protocol_df["Similarity"] = protocol_df["Similarity"] / 100.0
+    protocol_df = protocol_df[["Original", "Preprocessed", "Extracted_Code", "Similarity"]]
+    
+    return protocol_df
+
+"""
+def add_protocol(col_with_protocols: pd.Series,
                                 col_with_ref_codes: pd.Series,
                                 col_with_substances_for_protocols: pd.Series,
                                 required_columns: list,
                                 reference_list_protocol: pd.DataFrame,
                                 threshold: int = 0.9):
-    """
+    
     Applies the protocol-relevant functions to make it
     more user-friendly.
-    """    
+      
     df_with_protocols = get_codes(col_with_protocols,
                                 col_with_ref_codes,
                                 col_with_substances_for_protocols,
@@ -64,3 +82,5 @@ def add_protocol(col_with_protocols: pd.Series,
                     required_columns)
     
     return out
+"""
+

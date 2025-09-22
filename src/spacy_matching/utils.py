@@ -8,7 +8,7 @@ import pandas as pd
 import spacy
 from spaczz.matcher import FuzzyMatcher
 import numpy as np
-from rapidfuzz import process
+from rapidfuzz import process, fuzz
 
 # helper functions
 
@@ -245,19 +245,19 @@ def create_substance_service_var(
     return final_output
 
 
-def get_matches_protocol(
+""" def get_matches_protocol(
     preprocessed_data: pd.DataFrame,
     ref_substance: pd.Series,
     threshold: float = 0.90
 ) -> pd.DataFrame:
-    """
+    
     The function is based on the previous function 'get_matches'.
     The aim is finding substances from the input column which
     may describe a protocol. Hence, it uses all the substances that are
     included in the protocol reference list. There should be only one
     match per substance. For this reason, the function does not need
     paramters 'max_per_match_id' or 'only_first_match'.
-    """
+    
     nlp = spacy.blank("en")
     matcher = FuzzyMatcher(nlp.vocab)
 
@@ -300,49 +300,57 @@ def get_matches_protocol(
 
 
     return out
+ """
 
-
+"""
 def sort_row(row, required_columns):
-    """
+    
     The function will order columns alphabetically.
     This is important because we are looking for specific protocols,
     which can be comprised of several substances. For example, the combination
     "Cisplatin" and "Gemcitabin" is called "Gem-Cis". Ordering both, the extraced
     substances as well as the reference list alphabetically makes detecting the
     combinations much easier. 
-    """    
+       
     values = row[required_columns].dropna().astype(str).tolist()
     values.sort()
     values += [np.nan] * (len(required_columns) - len(values))
     return pd.Series(values, index=required_columns)
+"""
 
-def fuzzy_match(text, ref_codes):
+def fuzzy_match(text, ref_codes, threshold):
     """
-    Uses process from rapidfuzz to find protocol codes.
+    text : str (may be nan)
+    ref_codes : sequence (list/Series) of choices
+    threshold : float between 0 and 1 (e.g. 0.9)
+    """
+    if pd.isna(text):
+        return np.nan, np.nan
 
-    text: The input text from the free text field 'Protocol'
-    ref_codes: The codes for protocols provided by the reference list
-    threshold: parameter for accuaracy of matches
-    """
-    match = process.extractOne(text, ref_codes, score_cutoff=90)
+    score_cutoff = int(threshold * 100)
+
+    match = process.extractOne(text, list(ref_codes), scorer=fuzz.ratio, score_cutoff=score_cutoff)
+
     if match:
-        return match[0], match[1]
+        return match[0], match[1]  
     else:
         return np.nan, np.nan
-    
+
+
+"""    
 def get_codes(col_with_protocols: pd.Series,
               col_with_ref: pd.Series,
               all_subs: pd.Series,
               required_columns: list,
               threshold: int = 0.9):
-    """
+    
     Function extracts first, the protocol codes from the free text field
     'col_with_protocol' using the protocol reference list 'col_with_ref'.
     Then, it extracts the subtance names using the
     substances from the protocol reference list 'all_subs'.
     The input 'required_column' are the substance columns. In this case,
     'substance_1', substance_2, substance_3 ... substance_7
-    """    
+        
     protocol_df = col_with_protocols.to_frame(name = "Original")
     protocol_df[["Extracted_Codes", "Similarity_Score"]] = protocol_df["Original"].apply(
     lambda x: pd.Series(fuzzy_match(x, col_with_ref))
@@ -361,10 +369,12 @@ def get_codes(col_with_protocols: pd.Series,
     
     return out
 
+
+
 def merge_frame(df_data: pd.DataFrame,
                 df_references:pd.DataFrame,
                 required_columns: list):
-    """
+    
     After substances are extracted and ordered alphabetically,
     we left join the dataframe 'df_data' with the protocol reference list
     'df_references'. This gives us the corresponding protocol codes.
@@ -372,7 +382,7 @@ def merge_frame(df_data: pd.DataFrame,
     the function orders it to "Cisplatin" and "Gemcitabin" and
     the left join with the protocol reference list adds the
     column code with the corresponding protocol code "Gem-Cis".
-    """    
+        
     merge_columns = required_columns
     df_references[required_columns] = df_references.apply(
     lambda row: sort_row(row, required_columns),
@@ -410,10 +420,10 @@ def create_protocol_service_var(col_with_protocols: pd.Series,
                                 required_columns: list,
                                 reference_list_protocol: pd.DataFrame,
                                 threshold: int = 0.9):
-    """
+    
     Applies the protocol-relevant functions to make it
     more user-friendly.
-    """    
+        
     df_with_protocols = get_codes(col_with_protocols,
                                   col_with_ref_codes,
                                   col_with_substances_for_protocols,
@@ -425,6 +435,7 @@ def create_protocol_service_var(col_with_protocols: pd.Series,
                       required_columns)
     
     return out
+"""
 
 def test():
     print("this is just a test")
