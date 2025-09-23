@@ -1,5 +1,5 @@
 import pandas as pd
-from .utils import preprocess_data, get_matches, fuzzy_match
+from .utils import preprocess_data, get_matches, fuzzy_match, add_spaces
 
 def add_substance(
     col_with_substances: pd.Series,
@@ -54,7 +54,7 @@ def add_protocol(col_with_protocols: pd.Series,
         lambda x: pd.Series(fuzzy_match(x, col_with_ref, threshold=threshold))
     )
 
-    protocol_df["Preprocessed"] = preprocess_data(protocol_df["Original"])["Preprocessed_text"]
+    protocol_df["Preprocessed"] = add_spaces(protocol_df["Original"])
     protocol_df["Similarity"] = protocol_df["Similarity"] / 100.0
     protocol_df = protocol_df[["Original", "Preprocessed", "Extracted_Code", "Similarity"]]
     
