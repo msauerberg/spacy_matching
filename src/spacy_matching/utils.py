@@ -123,7 +123,6 @@ def preprocess_data(col_with_free_text: pd.Series) -> pd.DataFrame:
 
     return df
 
-# find matches with FuzzyMatcher from spaczz
 def get_matches(
     preprocessed_data: pd.DataFrame,
     ref_substance: pd.Series,
@@ -150,31 +149,66 @@ def get_matches(
     It is recommanded to use a rather high threshold parameter because substance
     names are often very similar to each other.
     """
-    import spacy
-    from spaczz.matcher import FuzzyMatcher
-    import re
-
-    # create blank German nlp as before
     nlp = spacy.blank("de")
     matcher = FuzzyMatcher(nlp.vocab)
 
-    # Use partial_token fuzzy function and pass min_r derived from threshold.
-    # min_r is expected as percentage (e.g. 85), so convert threshold (0.85) -> 85
-    min_r_value = int(threshold * 100)
-
     for sub in ref_substance.dropna().astype(str):
-        # one kwargs dict per pattern (we add one pattern -> one dict)
-        matcher.add(sub, [nlp(sub)], kwargs=[{"fuzzy_func": "partial_token", "min_r": min_r_value}])
+        matcher.add(sub, [nlp(sub)])
 
     results = []
 
+    synthetic_ratio = int(threshold * 100)
+
     for _, row in preprocessed_data.iterrows():
-        text = row["Preprocessed_text"]  # uses preprocessed text for FuzzyMatcher
+        text = row["Preprocessed_text"]
         original = row["Original"]
         doc = nlp(text)
-        matches = matcher(doc)
+        matches = list(matcher(doc))
 
-        # keep original filtering behaviour (ratio is 0-100)
+        # Build set of already matched IDs (string labels) to avoid duplicates
+        existing_match_ids = {m[0] for m in matches}
+
+        # lower-case once for faster repeated checks
+        text_lower = text.lower()
+
+        for sub in ref_substance.dropna().astype(str):
+            sub_lower = sub.lower()
+            if sub_lower == "":
+                continue
+            # If reference substance is a substring of the input text and not already matched, add synthetic match
+            if sub_lower in text_lower and sub not in existing_match_ids:
+                # find character span (first occurrence)
+                start_char = text_lower.find(sub_lower)
+                end_char = start_char + len(sub_lower)
+
+                # try to map character span to token span
+                span = doc.char_span(start_char, end_char, alignment_mode="expand")
+                if span is not None:
+                    start_token_idx = span.start
+                    end_token_idx = span.end
+                else:
+                    # fallback: find token indices that cover the char range conservatively
+                    start_token_idx = None
+                    end_token_idx = None
+                    for i, token in enumerate(doc):
+                        token_start = token.idx
+                        token_end = token.idx + len(token.text)
+                        if start_token_idx is None and token_start <= start_char < token_end:
+                            start_token_idx = i
+                        if token_start < end_char <= token_end:
+                            end_token_idx = i + 1
+                            break
+                    # if still None, expand to whole doc (very conservative) to avoid crashes
+                    if start_token_idx is None:
+                        start_token_idx = 0
+                    if end_token_idx is None:
+                        end_token_idx = len(doc)
+
+                # create synthetic match tuple: (match_id, start, end, ratio, pattern)
+                synthetic_match = (sub, start_token_idx, end_token_idx, synthetic_ratio, nlp(sub))
+                matches.append(synthetic_match)
+                existing_match_ids.add(sub)
+
         matches_filtered = [m for m in matches if m[3] >= threshold * 100]
         matches_sorted = sorted(matches_filtered, key=lambda x: x[3], reverse=True)
 
@@ -188,7 +222,12 @@ def get_matches(
             if count >= max_per_match_id:
                 continue
 
-            result_row[f"Hit{match_idx}"] = doc[start:end].text
+            try:
+                hit_text = doc[start:end].text
+            except Exception:
+                hit_text = sub if "sub" in locals() else text
+
+            result_row[f"Hit{match_idx}"] = hit_text
             result_row[f"Mapped_to{match_idx}"] = match_id
             result_row[f"Similarity{match_idx}"] = ratio / 100
 
@@ -332,20 +371,64 @@ def fuzzy_match(text, ref_codes, threshold):
     text : str (may be nan)
     ref_codes : sequence (list/Series) of choices
     threshold : float between 0 and 1 (e.g. 0.9)
+    Returns (best_match, score) or (np.nan, np.nan)
     """
     if pd.isna(text):
         return np.nan, np.nan
 
-    score_cutoff = int(threshold * 100)
+    # Prepare reference codes
+    ref_codes_list = list(ref_codes)
+    ref_codes_lower = [str(r).lower() for r in ref_codes_list]
+    lower_to_orig = {ref_codes_lower[i]: ref_codes_list[i] for i in range(len(ref_codes_list))}
 
-    match = process.extractOne(text, list(ref_codes), scorer=fuzz.ratio, score_cutoff=score_cutoff)
-
-    if match:
-        return match[0], match[1]  
-    else:
+    # Split input text into tokens
+    text_str = str(text)
+    split_pattern = r"\s*(?:\||;|/|,|\+|\band\b|\bmit\b|\bund\b)\s*"
+    tokens = [tok.strip() for tok in re.split(split_pattern, text_str) if tok and tok.strip()]
+    if not tokens:
         return np.nan, np.nan
 
+    score_cutoff = int(threshold * 100)
 
+    best_match = None
+    best_score = -1
+
+    for tok in tokens:
+        tok_lower = tok.lower()
+
+        # exact match
+        if tok_lower in ref_codes_lower:
+            return lower_to_orig[tok_lower], 100
+
+        # match of prefix?
+        if "-" in tok_lower:
+            # extract all hyphen-separated parts
+            parts = tok_lower.split("-")
+            
+            # Try matching the full prefix (e.g., "CHOEP-14" from "CHOEP-14-Schema")
+            for i in range(len(parts), 0, -1):
+                prefix = "-".join(parts[:i])
+                if prefix in ref_codes_lower:
+                    return lower_to_orig[prefix], 100
+        
+        # Check if first word matches any reference exactly
+        if " " in tok_lower:
+            first_word = tok_lower.split()[0]
+            if first_word in ref_codes_lower:
+                return lower_to_orig[first_word], 100
+        
+        # rapid fuzz
+        match = process.extractOne(tok_lower, ref_codes_lower, scorer=fuzz.ratio, score_cutoff=score_cutoff)
+        if match:
+            matched_lower, score = match[0], match[1]
+            if score > best_score:
+                best_score = score
+                best_match = lower_to_orig.get(matched_lower, matched_lower)
+
+    if best_match is not None:
+        return best_match, best_score
+    else:
+        return np.nan, np.nan
 """    
 def get_codes(col_with_protocols: pd.Series,
               col_with_ref: pd.Series,
