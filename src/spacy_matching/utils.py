@@ -46,12 +46,12 @@ def find_5FU(text: str) -> str:
     return re.sub(pattern, "fluorouracil", text, flags=re.IGNORECASE)
 
 
-def calciumfolinat_to_folin(text: str) -> str:
-    """This is again a common substance and depending on the threshold parameter
-    for fuzzy matching it might be overlooked by fuzzy matching. This is why 
-    this function translates it.
-    """    
-    return re.sub(r"\b(Calciumfolinat)\b", "folinsäure", text, flags=re.IGNORECASE)
+#def calciumfolinat_to_folin(text: str) -> str:
+ #   """This is again a common substance and depending on the threshold parameter
+  #  for fuzzy matching it might be overlooked by fuzzy matching. This is why 
+   # this function translates it.
+   # """    
+    #return re.sub(r"\b(Calciumfolinat)\b", "folinsäure", text, flags=re.IGNORECASE)
 
 
 def find_gemcitabin(text: str) -> str:
@@ -114,7 +114,7 @@ def preprocess_data(col_with_free_text: pd.Series) -> pd.DataFrame:
         .apply(find_5FU)
         .apply(find_gemcitabin)
         .apply(find_Paclitaxel_nab)
-        .apply(calciumfolinat_to_folin)
+       # .apply(calciumfolinat_to_folin) # Calciumfolinat is on the most recent ref list by platfrom65c 
         .apply(remove_short_words)
         .str.strip()
     )
@@ -238,16 +238,24 @@ def get_matches(
 
     out = pd.DataFrame(results)
 
-    if only_first_match:
-        cols_to_keep = ["Original", "Mapped_to1", "Similarity1"]
-        available_columns = [col for col in cols_to_keep if col in out.columns]
-        dta_col_selected = out[available_columns]
-        dta_col_selected.columns = [
-            re.sub(r"\d+$", "", col) for col in dta_col_selected.columns
-        ]
-        return dta_col_selected
+    cleaned_df = out[[c for c in out.columns
+         if c.startswith(('Original', 'Mapped_to', 'Similarity'))]]
 
-    return out
+    cleaned_df.columns = [
+            re.sub(r'^Mapped_to', 'Extracted_Substance', col) for col in cleaned_df.columns
+            ]
+        
+    if only_first_match:
+        cols_to_keep = ["Original", "Extracted_Substance1", "Similarity1"]
+        available_columns = [col for col in cols_to_keep if col in cleaned_df.columns]
+        dta_selected = cleaned_df[available_columns]    
+        dta_selected.columns = [
+            re.sub(r"\d+$", "", col) for col in dta_selected.columns
+            ]
+        
+        return dta_selected
+
+    return cleaned_df
 
 
 def create_substance_service_var(

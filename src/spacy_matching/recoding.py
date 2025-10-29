@@ -56,8 +56,12 @@ def add_protocol(col_with_protocols: pd.Series,
 
     protocol_df["Preprocessed"] = add_spaces(protocol_df["Original"])
     protocol_df["Similarity"] = protocol_df["Similarity"] / 100.0
-    protocol_df = protocol_df[["Original", "Preprocessed", "Extracted_Code", "Similarity"]]
-    
+    protocol_df = protocol_df[["Original", "Extracted_Code", "Similarity"]]
+    protocol_df.rename(columns={
+        "Extracted_Code": "Extracted_Protocol_Code",
+        "Similarity": "SimilarityCode"
+        }, inplace=True)
+        
     return protocol_df
 
 """
