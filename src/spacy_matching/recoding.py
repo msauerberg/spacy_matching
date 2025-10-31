@@ -1,9 +1,9 @@
 import pandas as pd
-from .utils import preprocess_data, get_matches, fuzzy_match, add_spaces
+from .utils import preprocess_data, get_matches, fuzzy_match, add_spaces, get_zfkd_ref_substance
 
 def add_substance(
     col_with_substances: pd.Series,
-    col_with_ref_substances: pd.Series,
+    col_with_ref_substances: pd.Series | None = None,
     threshold: float = 0.85,
     max_per_match_id: int = 2,
     only_first_match: bool = True,
@@ -22,15 +22,20 @@ def add_substance(
     a pandasDataFrame column (pd.Series) with substance names.
     The output is a pandasDataFrame with the original input,
     the preprocessed text and all possible matches with similary score.
-    Use parameters to control output and sensitivity of the matcher. 
+    Use parameters to control output and sensitivity of the matcher.
     
     arguments:
-        col_with_substances: column with substances to be recoded
+        col_with_substances: column with substances to be recoded. if empty, zfkd reference will be auto-added
         col_with_ref_substances: column with reference substances
         threshold: similarity threshold, default 0.85
         max_per_match_id: maximum number of matches per ID, default 2
         only_first_match: return only the first match per ID
     """
+    
+    # * check if col_with_substances is None
+    if col_with_ref_substances is None:
+        col_with_ref_substances = get_zfkd_ref_substance()
+    
     preprocessed_out = preprocess_data(col_with_substances)
 
     final_output = get_matches(
@@ -44,8 +49,8 @@ def add_substance(
     return final_output
 
 def add_protocol(col_with_protocols: pd.Series,
-              col_with_ref: pd.Series,
-              threshold: float = 0.9):
+            col_with_ref: pd.Series,
+            threshold: float = 0.9):
     """
     Returns DataFrame with extracted code and similarity (normalized 0..1).
     """
@@ -64,27 +69,24 @@ def add_protocol(col_with_protocols: pd.Series,
         
     return protocol_df
 
-"""
-def add_protocol(col_with_protocols: pd.Series,
-                                col_with_ref_codes: pd.Series,
-                                col_with_substances_for_protocols: pd.Series,
-                                required_columns: list,
-                                reference_list_protocol: pd.DataFrame,
-                                threshold: int = 0.9):
+# def add_protocol(col_with_protocols: pd.Series,
+#                                 col_with_ref_codes: pd.Series,
+#                                 col_with_substances_for_protocols: pd.Series,
+#                                 required_columns: list,
+#                                 reference_list_protocol: pd.DataFrame,
+#                                 threshold: int = 0.9):
     
-    Applies the protocol-relevant functions to make it
-    more user-friendly.
+#     Applies the protocol-relevant functions to make it
+#     more user-friendly.
       
-    df_with_protocols = get_codes(col_with_protocols,
-                                col_with_ref_codes,
-                                col_with_substances_for_protocols,
-                                required_columns,
-                                threshold=threshold)
+#     df_with_protocols = get_codes(col_with_protocols,
+#                                 col_with_ref_codes,
+#                                 col_with_substances_for_protocols,
+#                                 required_columns,
+#                                 threshold=threshold)
     
-    out = merge_frame(df_with_protocols,
-                    reference_list_protocol,
-                    required_columns)
+#     out = merge_frame(df_with_protocols,
+#                     reference_list_protocol,
+#                     required_columns)
     
-    return out
-"""
-
+#     return out
