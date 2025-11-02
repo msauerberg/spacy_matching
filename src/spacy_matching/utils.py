@@ -437,6 +437,17 @@ def fuzzy_match(text, ref_codes, threshold):
         return best_match, best_score
     else:
         return np.nan, np.nan
+
+
+def get_zfkd_ref_substance():
+    print("💡 fetching zfkd reference from 🌐")
+    reference_list = pd.read_csv(
+        filepath_or_buffer="https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-references/-/raw/main/data/v2/Klassifikationen/substanz.csv",
+        sep=";")
+    col_with_ref_substances = reference_list[reference_list["gueltig_bis"].isna() & reference_list["code_gueltig_bis"].isna()]["substanz"]
+    return col_with_ref_substances
+
+
 """    
 def get_codes(col_with_protocols: pd.Series,
               col_with_ref: pd.Series,
