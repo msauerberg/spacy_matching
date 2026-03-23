@@ -12,7 +12,6 @@ from rapidfuzz import process, fuzz
 
 # helper functions
 
-
 def prepare_free_text(input_col: pd.Series) -> pd.DataFrame:
     """Prepares data by renaming, stripping, and cleaning null or empty entries."""
     input_data = pd.DataFrame(
@@ -23,356 +22,461 @@ def prepare_free_text(input_col: pd.Series) -> pd.DataFrame:
     )
     input_data["Original"] = input_data["Original"].astype(str).str.strip()
     return input_data
-
-
+ 
+ 
 def remove_short_words(text: str) -> str:
-    """removes words that are shorter than 3 characters
-    """    
-    return " ".join([word for word in text.split() if len(word) >= 3])
-
-
+    """Removes words shorter than 2 characters."""
+    return " ".join([word for word in text.split() if len(word) >= 2])
+ 
+ 
 def find_5FU(text: str) -> str:
-    """5FU and all the variants are abbrevations for
-    Flourouracil. The function translate it to the actual substance name
-    and catches common misspellings. In principle, fuzzy matching should be able
-    to deal with misspellings but since this is a very common substance it might make sense
-    to explicitly take care of them
-    """    
+    """Translates 5-FU variants and common misspellings to 'fluorouracil'."""
     pattern = (
         r"5 fu|5fu|5-fu|5_fu|Fluoruracil|flourouracil|5-fluoruuracil|"
         r"5-fluoro-uracil|5-fluoruuracil|5-fluoruracil|floururacil|"
         r"5-fluorounacil|flourouraci|5-fluourouracil"
     )
     return re.sub(pattern, "fluorouracil", text, flags=re.IGNORECASE)
-
-
-#def calciumfolinat_to_folin(text: str) -> str:
- #   """This is again a common substance and depending on the threshold parameter
-  #  for fuzzy matching it might be overlooked by fuzzy matching. This is why 
-   # this function translates it.
-   # """    
-    #return re.sub(r"\b(Calciumfolinat)\b", "folinsäure", text, flags=re.IGNORECASE)
-
-
+ 
+ 
 def find_gemcitabin(text: str) -> str:
-    """Another common substance that should be found, independend of the
-    threshold parameter of the fuzzy matcher.
-    """    
+    """Normalises common misspellings of gemcitabin."""
     return re.sub(
         r"Gemcibatin(?:e)?(?: Mono)?", "gemcitabin", text, flags=re.IGNORECASE
     )
-
-
+ 
+ 
 def find_Paclitaxel_nab(text: str) -> str:
-    """Sometimes the algorithm does not find nab-Paclitaxel since
-    it puts "nab" in the fron. Here, we translate it to the correct
-    substance name "Paclitaxel nab"
-    """    
+    """Translates 'nab-Paclitaxel' variants to the canonical 'Paclitaxel nab'."""
     return re.sub(
         r"\bnab[\s\-]?Paclitaxel\b", "Paclitaxel nab", text, flags=re.IGNORECASE
     )
-
+ 
+ 
 def add_spaces(s: pd.Series) -> pd.Series:
     """
-    Preprocess a pandas Series of strings to improve fuzzy matching:
-    - Adds spaces around (), [], {}, commas, semicolons, colons
+    Preprocesses a Series of strings to improve fuzzy matching:
+    - Adds spaces around brackets, commas, semicolons, colons
     - Separates letters from digits
-    - Separates words from punctuation (except / and - so units like mg/kg and hyphenated words stay intact)
-    - Keeps Unicode letters like ä, ü, ö intact
-    - Normalizes whitespace
-    - Lowercases text
+    - Separates words from punctuation (preserving / so mg/kg stays intact)
+    - Normalises whitespace and lowercases
     """
     def clean_text(text: str) -> str:
         if text is None:
             return ""
         text = str(text)
-
-        # Add spaces around specific punctuation
+        text = re.sub(r'-', ' ', text)
         text = re.sub(r'([()\[\]{},:;])', r' \1 ', text)
-
-        # Separate letters and digits (handles Unicode letters too)
         text = re.sub(r'(\d)(\D)', r'\1 \2', text)
         text = re.sub(r'(\D)(\d)', r'\1 \2', text)
-
-        # Separate letters from non-word, non-space, excluding / and -
         text = re.sub(r'([^\w\s/\-])(\w)', r'\1 \2', text)
         text = re.sub(r'(\w)([^\w\s/\-])', r'\1 \2', text)
-
-        # Collapse multiple spaces and lowercase
         text = re.sub(r'\s+', ' ', text).strip().lower()
         return text
-
+ 
     return s.map(clean_text)
-
-# preprocessing using helper functions
+ 
+ 
+def remove_conjunctions(text: str) -> str:
+    """Removes standalone 'und' and 'and', preserving substrings (e.g. 'Fundus')."""
+    text = re.sub(r'\bund\b', ' ', text, flags=re.IGNORECASE)
+    text = re.sub(r'\band\b', ' ', text, flags=re.IGNORECASE)
+    return text
+ 
+ 
+def _protect_atc_codes(text: str) -> tuple[str, dict]:
+    """
+    Replaces ATC codes in *text* with placeholder tokens before ``add_spaces``
+    runs.
+ 
+    ``add_spaces`` inserts spaces between letters and digits, turning
+    ``L02BG05`` into ``l 02 bg 05`` — four tokens that can never match the
+    original code in a single-token lookup. This function swaps each ATC code
+    for an all-letter placeholder (e.g. ``ATCPLACEHOLDERAX``) so ``add_spaces``
+    leaves it intact, then ``_restore_atc_codes`` puts the original uppercase
+    code back afterwards.
+ 
+    Returns
+    -------
+    (protected_text, placeholders)
+        ``placeholders`` maps each lowercase placeholder to its original
+        uppercase ATC code.
+    """
+    placeholders: dict[str, str] = {}
+ 
+    def replace(match: re.Match) -> str:
+        code = match.group(0).upper()
+        # All-letter placeholder — no digit/letter boundaries for add_spaces
+        key = f"ATCPLACEHOLDER{chr(65 + len(placeholders))}X"
+        placeholders[key.lower()] = code
+        return key
+ 
+    protected = re.sub(
+        r'\b[A-Z]\d{2}[A-Z]{2}\d{2}\b', replace, text, flags=re.IGNORECASE
+    )
+    return protected, placeholders
+ 
+ 
+def _restore_atc_codes(text: str, placeholders: dict) -> str:
+    """Restores ATC codes from placeholders inserted by ``_protect_atc_codes``."""
+    for key, code in placeholders.items():
+        text = text.replace(key, code)
+    return text
+ 
+ 
+def _protect_and_clean(text: str) -> str:
+    """
+    Protects ATC codes in *text*, runs the same cleaning logic as
+    ``add_spaces`` on the result, then restores the original ATC codes.
+ 
+    This ensures ATC codes like ``L02BG05`` survive preprocessing as a single
+    uppercase token rather than being split into ``l 02 bg 05``.
+    """
+    protected, placeholders = _protect_atc_codes(text)
+ 
+    # Replicate add_spaces logic on a single string
+    t = str(protected)
+    t = re.sub(r'-', ' ', t)
+    t = re.sub(r'([()\[\]{},:;])', r' \1 ', t)
+    t = re.sub(r'(\d)(\D)', r'\1 \2', t)
+    t = re.sub(r'(\D)(\d)', r'\1 \2', t)
+    t = re.sub(r'([^\w\s/\-])(\w)', r'\1 \2', t)
+    t = re.sub(r'(\w)([^\w\s/\-])', r'\1 \2', t)
+    t = re.sub(r'\s+', ' ', t).strip().lower()
+ 
+    return _restore_atc_codes(t, placeholders)
+ 
+ 
 def preprocess_data(col_with_free_text: pd.Series) -> pd.DataFrame:
-    """Applies functions from above sequentially to input data
-    """    
+    """Applies all preprocessing steps sequentially to the input series."""
     df = prepare_free_text(col_with_free_text)
     processed = (
         df["Original"]
         .apply(find_5FU)
         .apply(find_gemcitabin)
         .apply(find_Paclitaxel_nab)
-       # .apply(calciumfolinat_to_folin) # Calciumfolinat is on the most recent ref list by platfrom65c 
+        .apply(remove_conjunctions)
         .apply(remove_short_words)
         .str.strip()
     )
-
-    df["Preprocessed_text"] = add_spaces(processed)
-
+    df["Preprocessed_text"] = processed.apply(_protect_and_clean)
     return df
-
+ 
+ 
+def clean_series(s: pd.Series) -> pd.Series:
+    """
+    Applies consistent string preprocessing to a Series.
+ 
+    ATC codes are protected before cleaning and restored afterwards so that
+    e.g. ``L02BG05`` remains a single token rather than being split into
+    ``l 02 bg 05`` by ``add_spaces``.
+    """
+    return s.astype(str).apply(_protect_and_clean)
+ 
+ 
+ATC_CODE_PATTERN = re.compile(r'^[A-Z]\d{2}[A-Z]{2}\d{2}$', re.IGNORECASE)
+ 
+ 
+def is_atc_code(text: str) -> bool:
+    """Returns True if text matches the ATC code format (e.g. L02BX01)."""
+    return bool(ATC_CODE_PATTERN.match(text.strip()))
+ 
+ 
+def _build_atc_label_to_substance(
+    lookup_table: pd.DataFrame,
+    label_clean: pd.Series,
+) -> dict[str, str]:
+    """
+    Builds a mapping of raw uppercase ATC code → substance name from the
+    lookup table.
+ 
+    ATC labels are stored in their original uppercased form (NOT run through
+    ``add_spaces``/``clean_series``) so that they can be compared directly
+    against raw uppercase tokens from the input text. Running ``add_spaces``
+    on an ATC code like ``L02BX01`` would produce ``l 02 bx 01``, which can
+    never match a single token.
+ 
+    If the lookup table has an ``ATC_code`` column, rows with ``ATC_code == 1``
+    are used. Otherwise, ``is_atc_code()`` regex is applied to every cleaned
+    label as a fallback.
+ 
+    Parameters
+    ----------
+    lookup_table:
+        The lookup DataFrame (already dropna'd on label/substance,
+        index already reset).
+    label_clean:
+        Cleaned label strings aligned with lookup_table rows (used only
+        to identify ATC rows via regex when no ATC_code column is present).
+ 
+    Returns
+    -------
+    dict mapping uppercase raw ATC label → substance name.
+    """
+    # Raw labels uppercased — never passed through add_spaces
+    label_raw_upper = lookup_table["label"].astype(str).str.strip().str.upper()
+    substances = lookup_table["substance"].astype(str)
+ 
+    if "ATC_code" in lookup_table.columns:
+        atc_mask = lookup_table["ATC_code"].astype(int) == 1
+    else:
+        # Fall back to regex on the cleaned labels to detect ATC codes
+        atc_mask = label_clean.map(is_atc_code)
+ 
+    return dict(zip(label_raw_upper[atc_mask.values], substances[atc_mask.values]))
+ 
+ 
+def _match_atc_from_lookup(
+    text: str,
+    atc_label_to_substance: dict[str, str],
+) -> list[dict]:
+    """
+    Scans whitespace-delimited tokens in *text* for exact (case-insensitive)
+    matches against known ATC codes from the lookup table.
+ 
+    Both the token and the dict keys are compared in uppercase. The keys in
+    ``atc_label_to_substance`` are already stored as uppercase raw strings
+    (not run through ``add_spaces``), so a single token like ``l02bx01``
+    (lowercased by preprocessing) will correctly match the key ``L02BX01``.
+ 
+    Parameters
+    ----------
+    text:
+        Preprocessed input string.
+    atc_label_to_substance:
+        Mapping of uppercase raw ATC label → substance name.
+ 
+    Returns
+    -------
+    List of dicts with keys: hit_text, mapped_to, similarity (always 1.0).
+    Deduplicated by mapped substance name.
+    """
+    matches = []
+    seen: set[str] = set()
+ 
+    for token in text.split():
+        token_upper = token.strip().upper()
+        substance = atc_label_to_substance.get(token_upper)
+        if substance is not None and substance not in seen:
+            seen.add(substance)
+            matches.append({
+                "hit_text": token,
+                "mapped_to": substance,
+                "similarity": 1.0,
+            })
+ 
+    return matches
+ 
+ 
+# ── core matching ─────────────────────────────────────────────────────────────
+ 
+ 
 def get_matches(
     preprocessed_data: pd.DataFrame,
     ref_substance: pd.Series,
     threshold: float = 0.85,
     max_per_match_id: int = 2,
     only_first_match: bool = False,
+    lookup_table: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    Extracts substances from the input text.
-    Each row is taken as one input text. In principle,
-    there should be only one substance per row. However, 
-    often there are more than one (e.g., "sub1; sub2 and sub3").
-    The FuzzyMatcher is capable of finding more than one match per row.
-    It stores matches in additional columns. Use "only_first_match" to 
-    remove extra columns and return only the first matched substance per row.
-    The max_per_match_id parameter defines how many matches are returned per word.
-    For instance, a row might include "Interferon alpha" and the algorithm might
-    find "Interferon alpha 2a", "Interferon alpha 2b" and "Peginterferon alpha"
-    as potential matches. If the parameter is set to 2, it would only return 2 matches-
-    the two best matches measured by the similarity score. Please note that the
-    parameter controlls the number of matches per word. For instance, if
-    the input is "sub1; sub2 and sub3" It can return two (if set to two) per ID,
-    meaning the output can include up to 6 potential matches for this input.
-    It is recommanded to use a rather high threshold parameter because substance
-    names are often very similar to each other.
+    Match preprocessed free-text substance entries against a reference
+    vocabulary using fuzzy matching, with optional ATC code resolution and
+    label→substance mapping via a lookup table.
+ 
+    Matching logic
+    --------------
+    **Without lookup table:**
+        All vocab terms — including any ATC codes present in the reference
+        list — pass through the fuzzy matcher unchanged. No special ATC
+        handling is applied. An ATC code in the input will be extracted if
+        and only if it is similar enough to a reference entry to pass the
+        threshold.
+ 
+    **With lookup table:**
+        Three passes are performed per input row, in priority order:
+ 
+        1. *ATC exact match* — tokens in the input are compared
+           case-insensitively against known ATC codes from the lookup table
+           (identified via the ``ATC_code`` column if present, otherwise via
+           ``is_atc_code()`` regex). Hits are mapped to substance names and
+           assigned similarity 1.0.
+ 
+        2. *Label fuzzy/exact match* — the preprocessed input is matched
+           against non-ATC lookup table labels using the fuzzy matcher and
+           substring fallback, then mapped to the corresponding substance name.
+ 
+        3. *Reference fuzzy match* — the preprocessed input is matched
+           against the reference substance list using the fuzzy matcher and
+           substring fallback.
+ 
+    Parameters
+    ----------
+    preprocessed_data:
+        Output of ``preprocess_data()``.
+    ref_substance:
+        Reference series of known substance names.
+    threshold:
+        Minimum fuzzy-match ratio in [0, 1].
+    max_per_match_id:
+        Maximum hits allowed per unique match ID.
+    only_first_match:
+        If True, return only the top hit per input row.
+    lookup_table:
+        Optional DataFrame with columns ``label`` and ``substance``
+        (and optionally ``ATC_code`` with 1/0 flag values).
     """
+ 
+    # --- preprocess reference substances ---
+    ref_original = ref_substance.dropna().astype(str)
+    ref_clean = clean_series(ref_original)
+    clean_to_original = dict(zip(ref_clean, ref_original))
+ 
+    # --- build lookup structures ---
+    label_to_substance: dict[str, str] = {}      # non-ATC labels → substance
+    atc_label_to_substance: dict[str, str] = {}  # ATC labels → substance
+    fuzzy_vocab: set[str] = set(ref_clean)        # default: ref substances only
+ 
+    if lookup_table is not None:
+        if not all(col in lookup_table.columns for col in ["label", "substance"]):
+            raise KeyError("If a lookup table is provided it MUST contain columns 'label' and 'substance'.")
+        lookup_table = lookup_table.dropna(subset=["label", "substance"]).reset_index(drop=True)
+        label_clean = clean_series(lookup_table["label"])
+ 
+        atc_label_to_substance = _build_atc_label_to_substance(
+            lookup_table, label_clean
+        )
+        # ATC labels are stored as uppercase raw strings — reconstruct the same
+        # set to exclude them from the fuzzy vocab
+        label_raw_upper = lookup_table["label"].astype(str).str.strip().str.upper()
+        atc_raw_upper = set(atc_label_to_substance.keys())
+ 
+        # Only non-ATC labels enter the fuzzy matcher
+        non_atc_mask = ~label_raw_upper.isin(atc_raw_upper)
+        label_to_substance = dict(
+            zip(
+                label_clean[non_atc_mask],
+                lookup_table["substance"].astype(str)[non_atc_mask],
+            )
+        )
+        fuzzy_vocab = set(ref_clean) | set(label_to_substance.keys())
+ 
+    # --- build fuzzy matcher ---
     nlp = spacy.blank("de")
     matcher = FuzzyMatcher(nlp.vocab)
-
-    for sub in ref_substance.dropna().astype(str):
-        matcher.add(sub, [nlp(sub)])
-
+ 
+    for term in fuzzy_vocab:
+        matcher.add(term, [nlp(term)])
+ 
     results = []
-
     synthetic_ratio = int(threshold * 100)
-
+ 
     for _, row in preprocessed_data.iterrows():
         text = row["Preprocessed_text"]
         original = row["Original"]
+ 
         doc = nlp(text)
         matches = list(matcher(doc))
-
-        # Build set of already matched IDs (string labels) to avoid duplicates
+ 
         existing_match_ids = {m[0] for m in matches}
-
-        # lower-case once for faster repeated checks
         text_lower = text.lower()
-
-        for sub in ref_substance.dropna().astype(str):
-            sub_lower = sub.lower()
-            if sub_lower == "":
+ 
+        # --- substring fallback for fuzzy vocab terms not yet matched ---
+        for term in fuzzy_vocab:
+            term_lower = term.lower()
+            if term_lower == "" or term in existing_match_ids:
                 continue
-            # If reference substance is a substring of the input text and not already matched, add synthetic match
-            if sub_lower in text_lower and sub not in existing_match_ids:
-                # find character span (first occurrence)
-                start_char = text_lower.find(sub_lower)
-                end_char = start_char + len(sub_lower)
-
-                # try to map character span to token span
+            if term_lower in text_lower:
+                start_char = text_lower.find(term_lower)
+                end_char = start_char + len(term_lower)
                 span = doc.char_span(start_char, end_char, alignment_mode="expand")
                 if span is not None:
                     start_token_idx = span.start
                     end_token_idx = span.end
                 else:
-                    # fallback: find token indices that cover the char range conservatively
-                    start_token_idx = None
-                    end_token_idx = None
-                    for i, token in enumerate(doc):
-                        token_start = token.idx
-                        token_end = token.idx + len(token.text)
-                        if start_token_idx is None and token_start <= start_char < token_end:
-                            start_token_idx = i
-                        if token_start < end_char <= token_end:
-                            end_token_idx = i + 1
-                            break
-                    # if still None, expand to whole doc (very conservative) to avoid crashes
-                    if start_token_idx is None:
-                        start_token_idx = 0
-                    if end_token_idx is None:
-                        end_token_idx = len(doc)
-
-                # create synthetic match tuple: (match_id, start, end, ratio, pattern)
-                synthetic_match = (sub, start_token_idx, end_token_idx, synthetic_ratio, nlp(sub))
-                matches.append(synthetic_match)
-                existing_match_ids.add(sub)
-
+                    start_token_idx, end_token_idx = 0, len(doc)
+                matches.append((
+                    term,
+                    start_token_idx,
+                    end_token_idx,
+                    synthetic_ratio,
+                    nlp(term),
+                ))
+                existing_match_ids.add(term)
+ 
+        # --- filter & sort fuzzy matches ---
         matches_filtered = [m for m in matches if m[3] >= threshold * 100]
         matches_sorted = sorted(matches_filtered, key=lambda x: x[3], reverse=True)
-
-        result_row = {"Original": original}
-        result_row["Preprocessed"] = text
-        match_id_counts = {}
+ 
+        result_row: dict = {"Original": original, "Preprocessed": text}
         match_idx = 1
-
+ 
+        # --- pass 1: ATC exact matches (only when lookup_table is provided) ---
+        if lookup_table is not None:
+            for atc_m in _match_atc_from_lookup(text, atc_label_to_substance):
+                result_row[f"Hit{match_idx}"] = atc_m["hit_text"]
+                result_row[f"Mapped_to{match_idx}"] = atc_m["mapped_to"]
+                result_row[f"Similarity{match_idx}"] = atc_m["similarity"]
+                match_idx += 1
+ 
+        # --- pass 2 & 3: fuzzy matches (non-ATC labels + ref substances) ---
+        match_id_counts: dict[str, int] = {}
         for match_id, start, end, ratio, _ in matches_sorted:
             count = match_id_counts.get(match_id, 0)
             if count >= max_per_match_id:
                 continue
-
             try:
                 hit_text = doc[start:end].text
             except Exception:
-                hit_text = sub if "sub" in locals() else text
-
+                hit_text = text
+ 
+            if match_id in label_to_substance:
+                mapped_substance = label_to_substance[match_id]
+            else:
+                mapped_substance = clean_to_original.get(match_id, match_id)
+ 
             result_row[f"Hit{match_idx}"] = hit_text
-            result_row[f"Mapped_to{match_idx}"] = match_id
+            result_row[f"Mapped_to{match_idx}"] = mapped_substance
             result_row[f"Similarity{match_idx}"] = ratio / 100
-
+ 
             match_id_counts[match_id] = count + 1
             match_idx += 1
-
+ 
         results.append(result_row)
-
+ 
     out = pd.DataFrame(results)
-
-    cleaned_df = out[[c for c in out.columns
-         if c.startswith(('Original', 'Mapped_to', 'Similarity'))]]
-
+ 
+    cleaned_df = out[
+        [c for c in out.columns if c.startswith(("Original", "Mapped_to", "Similarity"))]
+    ]
     cleaned_df.columns = [
-            re.sub(r'^Mapped_to', 'Extracted_Substance', col) for col in cleaned_df.columns
-            ]
-        
+        re.sub(r"^Mapped_to", "Extracted_Substance", col)
+        for col in cleaned_df.columns
+    ]
+ 
     if only_first_match:
         cols_to_keep = ["Original", "Extracted_Substance1", "Similarity1"]
         available_columns = [col for col in cols_to_keep if col in cleaned_df.columns]
-        dta_selected = cleaned_df[available_columns]    
+        dta_selected = cleaned_df[available_columns]
         dta_selected.columns = [
             re.sub(r"\d+$", "", col) for col in dta_selected.columns
-            ]
-        
+        ]
         return dta_selected
-
+ 
     return cleaned_df
-
-
-def create_substance_service_var(
-    col_with_substances: pd.Series,
-    col_with_ref_substances: pd.Series,
-    threshold: float = 0.85,
-    max_per_match_id: int = 2,
-    only_first_match: bool = False,
-) -> pd.DataFrame:
-    """
-    This is the pipeline for creating the service variable
-    for substances using ZfKD data.
-    The functions are described in detail in utils.py.
-    In short, the functions takes a pandasDataFrame column
-    as an input and preprocesses its entries first.
-    This results in a pandasDataFrame with the original
-    input in one column and the preprocessed text in another one.
-    The fuzzy matching relies on FuzzyMatcher from spaczz.
-    It uses the preprocessed input and a reference list that
-    the uses needs to provide. The reference list must be 
-    a pandasDataFrame column (pd.Series) with substance names.
-    The output is a pandasDataFrame with the original input,
-    the preprocessed text and all possible matches with similary score.
-    Use parameters to control output and sensitivity of the matcher. 
-    
-    arguments:
-        col_with_substances: column with substances to be recoded
-        col_with_ref_substances: column with reference substances
-        threshold: similarity threshold, default 0.85
-        max_per_match_id: maximum number of matches per ID, default 2
-        only_first_match: return only the first match per ID
-    """
-    preprocessed_out = preprocess_data(col_with_substances)
-
-    final_output = get_matches(
-        preprocessed_out,
-        col_with_ref_substances,
-        threshold=threshold,
-        max_per_match_id=max_per_match_id,
-        only_first_match=only_first_match,
+ 
+ 
+def get_zfkd_ref_substance():
+    print("💡 fetching zfkd reference from 🌐")
+    reference_list = pd.read_csv(
+        filepath_or_buffer="https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-references/-/raw/main/data/v2/Klassifikationen/substanz.csv",
+        sep=";",
     )
-
-    return final_output
-
-
-""" def get_matches_protocol(
-    preprocessed_data: pd.DataFrame,
-    ref_substance: pd.Series,
-    threshold: float = 0.90
-) -> pd.DataFrame:
-    
-    The function is based on the previous function 'get_matches'.
-    The aim is finding substances from the input column which
-    may describe a protocol. Hence, it uses all the substances that are
-    included in the protocol reference list. There should be only one
-    match per substance. For this reason, the function does not need
-    paramters 'max_per_match_id' or 'only_first_match'.
-    
-    nlp = spacy.blank("en")
-    matcher = FuzzyMatcher(nlp.vocab)
-
-    for sub in ref_substance.dropna().astype(str):
-        matcher.add(sub, [nlp(sub)])
-
-    results = []
-
-    for _, row in preprocessed_data.iterrows():
-        text = row["Preprocessed_text"] 
-        original = row["Original"]
-        extracted_codes = row["Extracted_Codes"]
-        similarity_score = row["Similarity_Score"]
-        doc = nlp(text)
-        matches = matcher(doc)
-
-        matches_filtered = [m for m in matches if m[3] >= threshold]
-        matches_sorted = sorted(matches_filtered, key=lambda x: x[3], reverse=True)
-
-        result_row = {"Original": original}
-        result_row["Preprocessed"] = text
-        result_row["Extracted_Codes"] = extracted_codes
-        result_row["Similarity_Score"] = similarity_score
-        match_id_counts = {}
-        match_idx = 1
-
-        for match_id, start, end, ratio, _ in matches_sorted:
-            count = match_id_counts.get(match_id, 0)
-            if count >= 1:
-                continue
-
-            result_row[f"substanz_{match_idx}"] = match_id
-            
-            match_id_counts[match_id] = count + 1
-            match_idx += 1
-
-        results.append(result_row)
-
-    out = pd.DataFrame(results)
-
-
-    return out
- """
-
-"""
-def sort_row(row, required_columns):
-    
-    The function will order columns alphabetically.
-    This is important because we are looking for specific protocols,
-    which can be comprised of several substances. For example, the combination
-    "Cisplatin" and "Gemcitabin" is called "Gem-Cis". Ordering both, the extraced
-    substances as well as the reference list alphabetically makes detecting the
-    combinations much easier. 
-       
-    values = row[required_columns].dropna().astype(str).tolist()
-    values.sort()
-    values += [np.nan] * (len(required_columns) - len(values))
-    return pd.Series(values, index=required_columns)
-"""
+    col_with_ref_substances = reference_list[
+        reference_list["gueltig_bis"].isna()
+        & reference_list["code_gueltig_bis"].isna()
+    ]["substanz"]
+    return col_with_ref_substances
 
 def fuzzy_match(text, ref_codes, threshold):
     """
@@ -438,115 +542,6 @@ def fuzzy_match(text, ref_codes, threshold):
     else:
         return np.nan, np.nan
 
-
-def get_zfkd_ref_substance():
-    print("💡 fetching zfkd reference from 🌐")
-    reference_list = pd.read_csv(
-        filepath_or_buffer="https://gitlab.opencode.de/robert-koch-institut/zentrum-fuer-krebsregisterdaten/cancerdata-references/-/raw/main/data/v2/Klassifikationen/substanz.csv",
-        sep=";")
-    col_with_ref_substances = reference_list[reference_list["gueltig_bis"].isna() & reference_list["code_gueltig_bis"].isna()]["substanz"]
-    return col_with_ref_substances
-
-
-"""    
-def get_codes(col_with_protocols: pd.Series,
-              col_with_ref: pd.Series,
-              all_subs: pd.Series,
-              required_columns: list,
-              threshold: int = 0.9):
-    
-    Function extracts first, the protocol codes from the free text field
-    'col_with_protocol' using the protocol reference list 'col_with_ref'.
-    Then, it extracts the subtance names using the
-    substances from the protocol reference list 'all_subs'.
-    The input 'required_column' are the substance columns. In this case,
-    'substance_1', substance_2, substance_3 ... substance_7
-        
-    protocol_df = col_with_protocols.to_frame(name = "Original")
-    protocol_df[["Extracted_Codes", "Similarity_Score"]] = protocol_df["Original"].apply(
-    lambda x: pd.Series(fuzzy_match(x, col_with_ref))
-    )  
-    protocol_df["Preprocessed_text"] = preprocess_data(protocol_df["Original"])["Preprocessed_text"]
-    out = get_matches_protocol(protocol_df, all_subs, threshold * 100)
-
-    # Add missing columns with NaN
-    for col in required_columns:
-        if col not in out.columns:
-            out[col] = np.nan
-    
-    # Apply only to substanz columns
-    out[required_columns] = out.apply(lambda row: sort_row(row, required_columns),
-                                      axis=1)
-    
-    return out
-
-
-
-def merge_frame(df_data: pd.DataFrame,
-                df_references:pd.DataFrame,
-                required_columns: list):
-    
-    After substances are extracted and ordered alphabetically,
-    we left join the dataframe 'df_data' with the protocol reference list
-    'df_references'. This gives us the corresponding protocol codes.
-    For example, if we could extract "Gemcitabin" and "Cisplatin",
-    the function orders it to "Cisplatin" and "Gemcitabin" and
-    the left join with the protocol reference list adds the
-    column code with the corresponding protocol code "Gem-Cis".
-        
-    merge_columns = required_columns
-    df_references[required_columns] = df_references.apply(
-    lambda row: sort_row(row, required_columns),
-                                      axis=1)
-
-    try:
-        merged_df = pd.merge(
-            df_data,
-            df_references.drop("therapieart", axis=1, errors='ignore'),
-            on=merge_columns,
-            how='left'
-        )
-    except Exception as e:
-        print(f"Defined NaN as a string to avoid error: {e}")
-        for df in [df_data, df_references]:
-            for col in merge_columns:
-                df[col] = df[col].astype(str).replace('nan', 'NaN').fillna('NaN')
-        
-        merged_df = pd.merge(
-            df_data,
-            df_references.drop("therapieart", axis=1, errors='ignore'),
-            on=merge_columns,
-            how='left'
-        )
-    
-    mask_all_nan_or_empty = merged_df[merge_columns].map(lambda x: pd.isna(x) or x == 'NaN').all(axis=1)
-    merged_df.loc[mask_all_nan_or_empty, "code"] = np.nan
-
-    return merged_df
-
-
-def create_protocol_service_var(col_with_protocols: pd.Series,
-                                col_with_ref_codes: pd.Series,
-                                col_with_substances_for_protocols: pd.Series,
-                                required_columns: list,
-                                reference_list_protocol: pd.DataFrame,
-                                threshold: int = 0.9):
-    
-    Applies the protocol-relevant functions to make it
-    more user-friendly.
-        
-    df_with_protocols = get_codes(col_with_protocols,
-                                  col_with_ref_codes,
-                                  col_with_substances_for_protocols,
-                                  required_columns,
-                                  threshold=threshold)
-    
-    out = merge_frame(df_with_protocols,
-                      reference_list_protocol,
-                      required_columns)
-    
-    return out
-"""
 
 def test():
     print("this is just a test")

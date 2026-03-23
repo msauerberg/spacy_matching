@@ -64,6 +64,64 @@ If the option is set to "False", the function can return multiple hits. For the 
 
 ![show_num](https://github.com/msauerberg/spacy_matching/blob/master/images/atomic_vs_multiple.png?raw=true)
 
+### optional: use an additional lookup table
+
+It can be useful to provide a lookup table additionally. This maps labels to substance names or ATC codes to substance names. The user can provide such a list. If it is provided it MUST have the column 'label' and 'substance'. If ATC codes are included in the 'label' column, a third column 'ATC_code' should be added as well. The 'ATC_code' column should be a dummy variable with 1 = is an ATC code and 0 = is not an ATC code.
+
+## Diagram of the code logic
+
+flowchart TD
+    A([Input: free-text series]) --> B
+
+    subgraph PRE ["1 · Preprocessing"]
+        B[Normalise substance aliases\n5-FU variants · gemcitabin · nab-paclitaxel]
+        B --> C[Remove conjunctions\nund · and]
+        C --> D[Remove short words · strip whitespace]
+        D --> E[Protect ATC codes as placeholders]
+        E --> F[add_spaces: separate digits/letters,\npunctuation, lowercase]
+        F --> G[Restore ATC codes as single uppercase tokens]
+    end
+
+    G --> H{lookup_table\nprovided?}
+
+    H -- No --> I
+
+    subgraph NOLOOKUP ["2a · No lookup table — pure fuzzy matching"]
+        I[Build fuzzy vocab from reference list\nATC codes in ref list treated as regular terms]
+        I --> J[Fuzzy match input against vocab\nspaczz + substring fallback]
+        J --> K[Filter by threshold · sort by similarity]
+    end
+
+    H -- Yes --> L
+
+    subgraph LOOKUP ["2b · With lookup table"]
+        L[Split lookup table into\nATC entries · non-ATC label entries]
+        L --> M
+
+        subgraph PASS1 ["Pass 1 · ATC exact match"]
+            M[Compare each input token\ncase-insensitive against ATC codes\nfrom lookup table]
+            M --> N[Map matched code → substance name\nsimilarity = 1.0]
+        end
+
+        N --> O
+
+        subgraph PASS23 ["Pass 2 + 3 · Fuzzy matching"]
+            O[Build fuzzy vocab:\nnon-ATC lookup labels + reference substances]
+            O --> P[Fuzzy match input against vocab\nspaczz + substring fallback]
+            P --> Q[Map label hits → substance name\nMap ref hits → substance name]
+            Q --> R[Filter by threshold · sort by similarity]
+        end
+    end
+
+    K --> S[Collect hits:\nHit · Mapped_to · Similarity columns]
+    R --> S
+
+    S --> T{only_first_match?}
+    T -- Yes --> U[Keep top hit per row]
+    T -- No --> V[Keep all hits per row]
+    U --> W([Output DataFrame])
+    V --> W
+
 ## Credits
 
 Thanks to @smeisegeier for helpful feedback on the code and for making the function available as a python package.

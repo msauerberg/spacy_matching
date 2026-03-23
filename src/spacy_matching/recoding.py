@@ -1,12 +1,14 @@
 import pandas as pd
 from .utils import preprocess_data, get_matches, fuzzy_match, add_spaces, get_zfkd_ref_substance
 
+
 def add_substance(
     col_with_substances: pd.Series,
     col_with_ref_substances: pd.Series | None = None,
     threshold: float = 0.85,
     max_per_match_id: int = 2,
     only_first_match: bool = True,
+    lookup_table: pd.DataFrame | None = None,   # NEW
 ) -> pd.DataFrame:
     """
     This is the pipeline for creating the service variable
@@ -31,11 +33,10 @@ def add_substance(
         max_per_match_id: maximum number of matches per ID, default 2
         only_first_match: return only the first match per ID
     """
-    
-    # * check if col_with_substances is None
+
     if col_with_ref_substances is None:
         col_with_ref_substances = get_zfkd_ref_substance()
-    
+
     preprocessed_out = preprocess_data(col_with_substances)
 
     final_output = get_matches(
@@ -44,6 +45,7 @@ def add_substance(
         threshold=threshold,
         max_per_match_id=max_per_match_id,
         only_first_match=only_first_match,
+        lookup_table=lookup_table,   # NEW
     )
 
     return final_output
@@ -69,24 +71,3 @@ def add_protocol(col_with_protocols: pd.Series,
         
     return protocol_df
 
-# def add_protocol(col_with_protocols: pd.Series,
-#                                 col_with_ref_codes: pd.Series,
-#                                 col_with_substances_for_protocols: pd.Series,
-#                                 required_columns: list,
-#                                 reference_list_protocol: pd.DataFrame,
-#                                 threshold: int = 0.9):
-    
-#     Applies the protocol-relevant functions to make it
-#     more user-friendly.
-      
-#     df_with_protocols = get_codes(col_with_protocols,
-#                                 col_with_ref_codes,
-#                                 col_with_substances_for_protocols,
-#                                 required_columns,
-#                                 threshold=threshold)
-    
-#     out = merge_frame(df_with_protocols,
-#                     reference_list_protocol,
-#                     required_columns)
-    
-#     return out
