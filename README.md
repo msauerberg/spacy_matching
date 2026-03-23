@@ -70,6 +70,7 @@ It can be useful to provide a lookup table additionally. This maps labels to sub
 
 ## Diagram of the code logic
 
+```mermaid
 flowchart TD
     A([Input: free-text series]) --> B
 
@@ -121,7 +122,7 @@ flowchart TD
     T -- No --> V[Keep all hits per row]
     U --> W([Output DataFrame])
     V --> W
-
+```
 ## Credits
 
 Thanks to @smeisegeier for helpful feedback on the code and for making the function available as a python package.
