@@ -268,9 +268,6 @@ def _match_atc_from_lookup(
     return matches
  
  
-# ── core matching ─────────────────────────────────────────────────────────────
- 
- 
 def get_matches(
     preprocessed_data: pd.DataFrame,
     ref_substance: pd.Series,
@@ -283,33 +280,28 @@ def get_matches(
     Match preprocessed free-text substance entries against a reference
     vocabulary using fuzzy matching, with optional ATC code resolution and
     label→substance mapping via a lookup table.
- 
+
     Matching logic
     --------------
     **Without lookup table:**
         All vocab terms — including any ATC codes present in the reference
         list — pass through the fuzzy matcher unchanged. No special ATC
-        handling is applied. An ATC code in the input will be extracted if
-        and only if it is similar enough to a reference entry to pass the
-        threshold.
- 
+        handling is applied.
+
     **With lookup table:**
         Three passes are performed per input row, in priority order:
- 
-        1. *ATC exact match* — tokens in the input are compared
-           case-insensitively against known ATC codes from the lookup table
-           (identified via the ``ATC_code`` column if present, otherwise via
-           ``is_atc_code()`` regex). Hits are mapped to substance names and
-           assigned similarity 1.0.
- 
-        2. *Label fuzzy/exact match* — the preprocessed input is matched
-           against non-ATC lookup table labels using the fuzzy matcher and
-           substring fallback, then mapped to the corresponding substance name.
- 
-        3. *Reference fuzzy match* — the preprocessed input is matched
-           against the reference substance list using the fuzzy matcher and
-           substring fallback.
- 
+
+        1. *ATC exact match* — tokens are compared case-insensitively against
+           known ATC codes from the lookup table. Hits are assigned
+           similarity 1.0.
+
+        2. *Label fuzzy/exact match* — non-ATC lookup table labels are matched
+           via the fuzzy matcher and substring fallback, then mapped to the
+           corresponding substance name.
+
+        3. *Reference fuzzy match* — the input is matched against the
+           reference substance list.
+
     Parameters
     ----------
     preprocessed_data:
@@ -319,39 +311,36 @@ def get_matches(
     threshold:
         Minimum fuzzy-match ratio in [0, 1].
     max_per_match_id:
-        Maximum hits allowed per unique match ID.
+        Maximum hits allowed per unique resolved substance name.
     only_first_match:
         If True, return only the top hit per input row.
     lookup_table:
         Optional DataFrame with columns ``label`` and ``substance``
         (and optionally ``ATC_code`` with 1/0 flag values).
     """
- 
-    # --- preprocess reference substances ---
+
+    
     ref_original = ref_substance.dropna().astype(str)
     ref_clean = clean_series(ref_original)
     clean_to_original = dict(zip(ref_clean, ref_original))
- 
-    # --- build lookup structures ---
-    label_to_substance: dict[str, str] = {}      # non-ATC labels → substance
-    atc_label_to_substance: dict[str, str] = {}  # ATC labels → substance
-    fuzzy_vocab: set[str] = set(ref_clean)        # default: ref substances only
- 
+
+    
+    label_to_substance: dict[str, str] = {}
+    atc_label_to_substance: dict[str, str] = {}
+    fuzzy_vocab: set[str] = set(ref_clean)
+
     if lookup_table is not None:
         if not all(col in lookup_table.columns for col in ["label", "substance"]):
-            raise KeyError("If a lookup table is provided it MUST contain columns 'label' and 'substance'.")
+            raise KeyError("lookup_table must contain columns 'label' and 'substance'.")
         lookup_table = lookup_table.dropna(subset=["label", "substance"]).reset_index(drop=True)
         label_clean = clean_series(lookup_table["label"])
- 
+
         atc_label_to_substance = _build_atc_label_to_substance(
             lookup_table, label_clean
         )
-        # ATC labels are stored as uppercase raw strings — reconstruct the same
-        # set to exclude them from the fuzzy vocab
         label_raw_upper = lookup_table["label"].astype(str).str.strip().str.upper()
         atc_raw_upper = set(atc_label_to_substance.keys())
- 
-        # Only non-ATC labels enter the fuzzy matcher
+
         non_atc_mask = ~label_raw_upper.isin(atc_raw_upper)
         label_to_substance = dict(
             zip(
@@ -360,28 +349,28 @@ def get_matches(
             )
         )
         fuzzy_vocab = set(ref_clean) | set(label_to_substance.keys())
- 
-    # --- build fuzzy matcher ---
+
+    
     nlp = spacy.blank("de")
     matcher = FuzzyMatcher(nlp.vocab)
- 
+
     for term in fuzzy_vocab:
         matcher.add(term, [nlp(term)])
- 
+
     results = []
     synthetic_ratio = int(threshold * 100)
- 
+
     for _, row in preprocessed_data.iterrows():
         text = row["Preprocessed_text"]
         original = row["Original"]
- 
+
         doc = nlp(text)
         matches = list(matcher(doc))
- 
+
         existing_match_ids = {m[0] for m in matches}
         text_lower = text.lower()
- 
-        # --- substring fallback for fuzzy vocab terms not yet matched ---
+
+        
         for term in fuzzy_vocab:
             term_lower = term.lower()
             if term_lower == "" or term in existing_match_ids:
@@ -403,49 +392,62 @@ def get_matches(
                     nlp(term),
                 ))
                 existing_match_ids.add(term)
- 
-        # --- filter & sort fuzzy matches ---
+
+        
         matches_filtered = [m for m in matches if m[3] >= threshold * 100]
         matches_sorted = sorted(matches_filtered, key=lambda x: x[3], reverse=True)
- 
+
+        
+        accepted: list[tuple[int, int]] = []
+        substance_counts: dict[str, int] = {}
         result_row: dict = {"Original": original, "Preprocessed": text}
         match_idx = 1
- 
-        # --- pass 1: ATC exact matches (only when lookup_table is provided) ---
+
+        
         if lookup_table is not None:
             for atc_m in _match_atc_from_lookup(text, atc_label_to_substance):
                 result_row[f"Hit{match_idx}"] = atc_m["hit_text"]
                 result_row[f"Mapped_to{match_idx}"] = atc_m["mapped_to"]
                 result_row[f"Similarity{match_idx}"] = atc_m["similarity"]
                 match_idx += 1
- 
-        # --- pass 2 & 3: fuzzy matches (non-ATC labels + ref substances) ---
-        match_id_counts: dict[str, int] = {}
+
+        
         for match_id, start, end, ratio, _ in matches_sorted:
-            count = match_id_counts.get(match_id, 0)
-            if count >= max_per_match_id:
-                continue
-            try:
-                hit_text = doc[start:end].text
-            except Exception:
-                hit_text = text
- 
+
             if match_id in label_to_substance:
                 mapped_substance = label_to_substance[match_id]
             else:
                 mapped_substance = clean_to_original.get(match_id, match_id)
- 
+
+            count = substance_counts.get(mapped_substance, 0)
+            if count >= max_per_match_id:
+                continue
+
+            overlaps = any(
+                not (end <= a_start or start >= a_end)
+                for a_start, a_end in accepted
+            )
+            if overlaps:
+                continue
+
+            try:
+                hit_text = doc[start:end].text
+            except Exception:
+                hit_text = text
+
             result_row[f"Hit{match_idx}"] = hit_text
             result_row[f"Mapped_to{match_idx}"] = mapped_substance
             result_row[f"Similarity{match_idx}"] = ratio / 100
- 
-            match_id_counts[match_id] = count + 1
+
+            accepted.append((start, end))
+            substance_counts[mapped_substance] = count + 1
             match_idx += 1
- 
-        results.append(result_row)
- 
+
+        results.append(result_row)  
+
+    
     out = pd.DataFrame(results)
- 
+
     cleaned_df = out[
         [c for c in out.columns if c.startswith(("Original", "Mapped_to", "Similarity"))]
     ]
@@ -453,7 +455,7 @@ def get_matches(
         re.sub(r"^Mapped_to", "Extracted_Substance", col)
         for col in cleaned_df.columns
     ]
- 
+
     if only_first_match:
         cols_to_keep = ["Original", "Extracted_Substance1", "Similarity1"]
         available_columns = [col for col in cols_to_keep if col in cleaned_df.columns]
@@ -462,9 +464,8 @@ def get_matches(
             re.sub(r"\d+$", "", col) for col in dta_selected.columns
         ]
         return dta_selected
- 
-    return cleaned_df
- 
+
+    return cleaned_df 
  
 def get_zfkd_ref_substance():
     print("💡 fetching zfkd reference from 🌐")
