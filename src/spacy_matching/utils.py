@@ -9,6 +9,7 @@ import spacy
 from spaczz.matcher import FuzzyMatcher
 import numpy as np
 from rapidfuzz import process, fuzz
+from tqdm import tqdm
 
 # helper functions
 
@@ -360,7 +361,9 @@ def get_matches(
     results = []
     synthetic_ratio = int(threshold * 100)
 
-    for _, row in preprocessed_data.iterrows():
+    for _, row in tqdm(preprocessed_data.iterrows(),
+                       total= len (preprocessed_data), desc = "Extracting substances"):
+    #for _, row in preprocessed_data.iterrows():
         text = row["Preprocessed_text"]
         original = row["Original"]
 
